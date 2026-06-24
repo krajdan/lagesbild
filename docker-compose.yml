@@ -1,0 +1,27 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: lagesbild
+      POSTGRES_USER: lagesbild
+      POSTGRES_PASSWORD: lagesbild
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lagesbild"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  app:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: postgres
+      DATABASE_URL: jdbc:postgresql://db:5432/lagesbild
+      DATABASE_USER: lagesbild
+      DATABASE_PASSWORD: lagesbild
+    ports:
+      - "8080:8080"

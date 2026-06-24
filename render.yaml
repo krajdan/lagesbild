@@ -1,0 +1,14 @@
+# Render Blueprint - en gratis Docker-webbtjanst, utan databas.
+# Demon kor mot in-memory H2 och seedar data vid uppstart, sa det finns ingen
+# databas som kan ga ut (Renders gratis-Postgres raderas efter 30 dagar).
+#
+# Vill du ha bestaende data senare: lagg till en Postgres i Render och satt
+# miljovariablerna SPRING_PROFILES_ACTIVE=postgres samt DATABASE_URL/USER/PASSWORD
+# (se README och application-postgres.properties).
+services:
+  - type: web
+    name: lagesbild
+    runtime: docker
+    plan: free
+    healthCheckPath: /actuator/health
+    autoDeploy: true

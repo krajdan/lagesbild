@@ -1,0 +1,1013 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Lägesbild · Örebro</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=Space+Mono:wght@700&display=swap" rel="stylesheet" />
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+
+<style>
+  :root {
+    --bg: #0B1220;
+    --panel: #111B2E;
+    --panel-2: #16223A;
+    --line: #233247;
+    --ink: #EAF1FB;
+    --muted: #8FA0BC;
+    --brand: #2FD3A7;      /* trygghet */
+    --brand-dim: rgba(47, 211, 167, .14);
+    --alarm: #FF6B5B;      /* otrygghet / hot-spot */
+    --warn: #F5A524;
+    --radius: 14px;
+    --shadow: 0 18px 50px -20px rgba(0, 0, 0, .7);
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    height: 100%;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "Inter", system-ui, sans-serif;
+    font-size: 14px;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  body { display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+
+  /* ---------- top bar ---------- */
+  header {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    padding: 12px 20px;
+    border-bottom: 1px solid var(--line);
+    background: linear-gradient(180deg, rgba(22, 34, 58, .6), rgba(11, 18, 32, .2));
+    flex-shrink: 0;
+  }
+  .brand { display: flex; align-items: center; gap: 11px; }
+  .mark {
+    width: 30px; height: 30px; border-radius: 9px;
+    background: radial-gradient(120% 120% at 30% 20%, var(--brand), #14916f);
+    position: relative; flex-shrink: 0;
+    box-shadow: 0 0 0 1px rgba(47, 211, 167, .35), 0 6px 18px -6px var(--brand);
+  }
+  .mark::after {
+    content: ""; position: absolute; inset: 9px;
+    border-radius: 50%; border: 2px solid #08121f;
+  }
+  .brand h1 {
+    font-family: "Space Grotesk", sans-serif;
+    font-size: 18px; font-weight: 700; letter-spacing: -.02em; margin: 0; line-height: 1;
+  }
+  .brand small {
+    display: block; color: var(--muted); font-size: 11px;
+    letter-spacing: .04em; text-transform: uppercase; margin-top: 3px;
+  }
+
+  nav { display: flex; gap: 4px; margin-left: 8px; }
+  .tab {
+    border: 0; background: transparent; color: var(--muted);
+    font-family: inherit; font-size: 13px; font-weight: 500;
+    padding: 8px 14px; border-radius: 9px; cursor: pointer;
+    transition: background .15s, color .15s;
+  }
+  .tab:hover { color: var(--ink); background: var(--panel); }
+  .tab.active { color: var(--bg); background: var(--brand); font-weight: 600; }
+
+  .spacer { flex: 1; }
+
+  .btn-report {
+    border: 0; cursor: pointer; font-family: "Space Grotesk", sans-serif;
+    font-weight: 600; font-size: 13px; color: var(--bg);
+    background: var(--brand); padding: 10px 18px; border-radius: 10px;
+    display: inline-flex; align-items: center; gap: 8px;
+    transition: transform .12s, box-shadow .12s;
+    box-shadow: 0 8px 20px -10px var(--brand);
+  }
+  .btn-report:hover { transform: translateY(-1px); box-shadow: 0 12px 26px -10px var(--brand); }
+  .btn-report .plus { font-size: 17px; line-height: 1; margin-top: -1px; }
+
+  /* ---------- layout ---------- */
+  main { flex: 1; position: relative; overflow: hidden; }
+  .view { position: absolute; inset: 0; display: none; }
+  .view.active { display: block; }
+
+  /* ---------- map view ---------- */
+  #map { position: absolute; inset: 0; background: var(--bg); }
+  .leaflet-container { background: #0B1220; font-family: "Inter", sans-serif; }
+  /* Lyft gatunätet: ljusare och något mer kontrast utan att tappa mörk ton */
+  .map-tiles { filter: brightness(1.45) contrast(1.18); }
+  .leaflet-control-attribution { background: rgba(11, 18, 32, .7) !important; color: #5e6e87 !important; }
+  .leaflet-control-attribution a { color: #7f90ad !important; }
+
+  .kpi-rail {
+    position: absolute; top: 16px; left: 50%; transform: translateX(-50%);
+    z-index: 600; display: flex; gap: 10px; pointer-events: none;
+    max-width: calc(100% - 360px);
+  }
+  .kpi {
+    background: rgba(17, 27, 46, .82); backdrop-filter: blur(10px);
+    border: 1px solid var(--line); border-radius: 12px;
+    padding: 11px 16px; min-width: 108px; box-shadow: var(--shadow);
+  }
+  .kpi .label {
+    font-size: 10px; letter-spacing: .07em; text-transform: uppercase;
+    color: var(--muted); margin-bottom: 5px;
+  }
+  .kpi .value {
+    font-family: "Space Mono", monospace; font-size: 23px; line-height: 1; font-weight: 700;
+  }
+  .kpi .value.green { color: var(--brand); }
+  .kpi .value.red { color: var(--alarm); }
+  .kpi .delta { font-size: 11px; margin-top: 4px; color: var(--muted); }
+  .kpi .delta.up { color: var(--alarm); }
+  .kpi .delta.down { color: var(--brand); }
+
+  .filters {
+    position: absolute; top: 16px; left: 16px; z-index: 600; width: 250px;
+    background: rgba(17, 27, 46, .9); backdrop-filter: blur(10px);
+    border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 16px; box-shadow: var(--shadow);
+  }
+  .filters h2 {
+    font-family: "Space Grotesk", sans-serif; font-size: 13px; font-weight: 600;
+    margin: 0 0 14px; letter-spacing: .02em;
+  }
+  .field { margin-bottom: 12px; }
+  .field:last-child { margin-bottom: 0; }
+  .field label {
+    display: block; font-size: 11px; color: var(--muted);
+    margin-bottom: 5px; letter-spacing: .03em;
+  }
+  select, input, textarea {
+    width: 100%; background: var(--panel-2); border: 1px solid var(--line);
+    color: var(--ink); border-radius: 9px; padding: 9px 10px;
+    font-family: inherit; font-size: 13px; outline: none;
+    transition: border-color .15s;
+  }
+  select:focus, input:focus, textarea:focus { border-color: var(--brand); }
+  textarea { resize: vertical; min-height: 64px; }
+
+  .seg { display: flex; gap: 4px; background: var(--panel-2); padding: 3px; border-radius: 9px; }
+  .seg button {
+    flex: 1; border: 0; background: transparent; color: var(--muted);
+    font-family: inherit; font-size: 12px; padding: 7px 0; border-radius: 7px;
+    cursor: pointer; transition: background .15s, color .15s;
+  }
+  .seg button.on { background: var(--brand); color: var(--bg); font-weight: 600; }
+
+  .legend {
+    position: absolute; bottom: 92px; left: 16px; z-index: 600;
+    background: rgba(17, 27, 46, .9); border: 1px solid var(--line);
+    border-radius: 11px; padding: 11px 14px; font-size: 11px; color: var(--muted);
+    box-shadow: var(--shadow);
+  }
+  .legend .row { display: flex; align-items: center; gap: 8px; margin-top: 7px; }
+  .legend .row:first-of-type { margin-top: 8px; }
+  .legend b { color: var(--ink); font-weight: 600; font-size: 11px; letter-spacing: .04em; text-transform: uppercase; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+
+  /* ---------- analysis view ---------- */
+  .analysis-scroll { position: absolute; inset: 0; overflow-y: auto; padding: 22px; }
+  .grid { max-width: 1180px; margin: 0 auto; display: grid; gap: 18px; grid-template-columns: 1fr 1fr; }
+  .card {
+    background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 20px; box-shadow: var(--shadow);
+  }
+  .card.wide { grid-column: 1 / -1; }
+  .card h3 {
+    font-family: "Space Grotesk", sans-serif; font-size: 15px; font-weight: 600;
+    margin: 0 0 3px; letter-spacing: -.01em;
+  }
+  .card .sub { color: var(--muted); font-size: 12px; margin: 0 0 18px; }
+  .chart-wrap { position: relative; height: 260px; }
+
+  /* veckopuls (signature) */
+  .pulse { display: grid; grid-template-columns: 36px 1fr; gap: 8px; align-items: center; }
+  .pulse-hours { grid-column: 2; display: grid; grid-template-columns: repeat(24, 1fr); font-size: 9px; color: var(--muted); margin-bottom: 2px; }
+  .pulse-hours span { text-align: center; }
+  .pulse-row { display: contents; }
+  .pulse-day { font-size: 11px; color: var(--muted); text-align: right; padding-right: 2px; }
+  .pulse-cells { display: grid; grid-template-columns: repeat(24, 1fr); gap: 3px; }
+  .cell {
+    aspect-ratio: 1 / 1; border-radius: 3px; background: var(--panel-2);
+    transition: transform .1s; cursor: default;
+  }
+  .cell:hover { transform: scale(1.35); outline: 1px solid rgba(255, 255, 255, .4); z-index: 2; position: relative; }
+  .pulse-scale { display: flex; align-items: center; gap: 8px; margin-top: 16px; font-size: 11px; color: var(--muted); justify-content: flex-end; }
+  .pulse-scale .bar { display: flex; gap: 3px; }
+  .pulse-scale .bar i { width: 14px; height: 10px; border-radius: 2px; }
+
+  /* ---------- interventions view ---------- */
+  .insats-scroll { position: absolute; inset: 0; overflow-y: auto; padding: 22px; }
+  .insats-wrap { max-width: 880px; margin: 0 auto; }
+  .insats-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; }
+  .insats-head h2 { font-family: "Space Grotesk", sans-serif; font-size: 20px; margin: 0; letter-spacing: -.02em; }
+  .insats-head p { color: var(--muted); margin: 4px 0 0; font-size: 13px; }
+  .insats-list { display: flex; flex-direction: column; gap: 12px; }
+  .insats {
+    background: var(--panel); border: 1px solid var(--line); border-left: 3px solid var(--brand);
+    border-radius: 12px; padding: 16px 18px;
+  }
+  .insats.AVSLUTAD { border-left-color: var(--muted); opacity: .8; }
+  .insats.PLANERAD { border-left-color: var(--warn); }
+  .insats .top { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+  .insats .title { font-family: "Space Grotesk", sans-serif; font-weight: 600; font-size: 15px; }
+  .insats .meta { color: var(--muted); font-size: 12px; margin-top: 4px; }
+  .insats .desc { color: #c3d0e4; font-size: 13px; margin-top: 9px; line-height: 1.5; }
+  .pill {
+    font-size: 10px; letter-spacing: .05em; text-transform: uppercase; font-weight: 600;
+    padding: 4px 9px; border-radius: 20px; white-space: nowrap;
+    background: var(--brand-dim); color: var(--brand);
+  }
+  .pill.PLANERAD { background: rgba(245, 165, 36, .15); color: var(--warn); }
+  .pill.AVSLUTAD { background: rgba(143, 160, 188, .15); color: var(--muted); }
+  .area-tag { color: var(--brand); font-weight: 600; }
+
+  /* ---------- report modal ---------- */
+  .overlay {
+    position: fixed; inset: 0; z-index: 1000; background: rgba(5, 9, 17, .6);
+    backdrop-filter: blur(3px); display: none; align-items: stretch; justify-content: flex-end;
+  }
+  .overlay.open { display: flex; }
+  .sheet {
+    width: 420px; max-width: 100%; background: var(--bg); border-left: 1px solid var(--line);
+    display: flex; flex-direction: column; box-shadow: -30px 0 60px -20px rgba(0, 0, 0, .8);
+    animation: slidein .22s ease;
+  }
+  @keyframes slidein { from { transform: translateX(30px); opacity: .5; } to { transform: none; opacity: 1; } }
+  .sheet header { border-bottom: 1px solid var(--line); }
+  .sheet .body { padding: 20px; overflow-y: auto; flex: 1; }
+  .sheet h2 { font-family: "Space Grotesk", sans-serif; font-size: 18px; margin: 0; letter-spacing: -.01em; }
+  .sheet .hint { color: var(--muted); font-size: 12px; margin: 3px 0 0; }
+  #pickMap { height: 170px; border-radius: 11px; border: 1px solid var(--line); margin-bottom: 4px; }
+  .coords { font-family: "Space Mono", monospace; font-size: 11px; color: var(--muted); margin: 0 0 14px; }
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .sheet .actions { padding: 16px 20px; border-top: 1px solid var(--line); display: flex; gap: 10px; }
+  .btn {
+    flex: 1; border: 0; cursor: pointer; font-family: "Space Grotesk", sans-serif; font-weight: 600;
+    font-size: 14px; padding: 12px; border-radius: 10px; transition: filter .12s;
+  }
+  .btn.primary { background: var(--brand); color: var(--bg); }
+  .btn.ghost { background: var(--panel-2); color: var(--ink); }
+  .btn:hover { filter: brightness(1.08); }
+  .close { background: transparent; border: 0; color: var(--muted); font-size: 22px; cursor: pointer; line-height: 1; }
+  .formerror { color: var(--alarm); font-size: 12px; margin: 0 0 12px; min-height: 0; }
+
+  .toast {
+    position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%) translateY(20px);
+    background: var(--brand); color: var(--bg); font-weight: 600; font-size: 13px;
+    padding: 12px 20px; border-radius: 11px; z-index: 1200; opacity: 0;
+    transition: opacity .25s, transform .25s; box-shadow: 0 14px 30px -12px var(--brand);
+    pointer-events: none; font-family: "Space Grotesk", sans-serif;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  .empty { color: var(--muted); text-align: center; padding: 40px; font-size: 13px; }
+
+  /* ---------- live / polisen ---------- */
+  .live-badge {
+    display: none; align-items: center; gap: 7px; margin-left: 14px;
+    padding: 5px 11px; border-radius: 20px; font-size: 11px; font-weight: 600;
+    letter-spacing: .06em; text-transform: uppercase; font-family: "Space Grotesk", sans-serif;
+    background: rgba(255, 107, 91, .12); color: var(--alarm); border: 1px solid rgba(255, 107, 91, .3);
+  }
+  .live-badge.on { display: inline-flex; }
+  .live-badge.offline { background: rgba(143, 160, 188, .12); color: var(--muted); border-color: var(--line); }
+  .live-dot {
+    width: 8px; height: 8px; border-radius: 50%; background: var(--alarm);
+    animation: lpulse 1.8s infinite; flex-shrink: 0;
+  }
+  .live-badge.offline .live-dot { background: var(--muted); animation: none; }
+  @keyframes lpulse {
+    0% { box-shadow: 0 0 0 0 rgba(255, 107, 91, .55); }
+    70% { box-shadow: 0 0 0 7px rgba(255, 107, 91, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(255, 107, 91, 0); }
+  }
+
+  .feed {
+    position: absolute; top: 16px; right: 16px; z-index: 600; width: 300px;
+    max-height: calc(100% - 32px); display: flex; flex-direction: column;
+    background: rgba(17, 27, 46, .92); backdrop-filter: blur(10px);
+    border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden;
+  }
+  .feed-head { padding: 13px 16px; border-bottom: 1px solid var(--line); flex-shrink: 0; }
+  .feed-head .t { display: flex; align-items: center; gap: 8px; font-family: "Space Grotesk", sans-serif; font-weight: 600; font-size: 13px; }
+  .feed-head .s { color: var(--muted); font-size: 11px; margin-top: 5px; }
+  .feed-list { overflow-y: auto; padding: 6px; }
+  .feed-item { padding: 10px 11px; border-radius: 9px; cursor: pointer; transition: background .15s; border-left: 2px solid transparent; }
+  .feed-item:hover { background: var(--panel-2); }
+  .feed-item.new { animation: flashin 1.8s ease; }
+  @keyframes flashin {
+    0% { background: rgba(255, 157, 77, .22); border-left-color: #ff9d4d; }
+    100% { background: transparent; border-left-color: transparent; }
+  }
+  .feed-item .ft { font-size: 12px; font-weight: 600; color: var(--ink); display: flex; justify-content: space-between; gap: 8px; }
+  .feed-item .ft .time { color: var(--muted); font-weight: 400; font-family: "Space Mono", monospace; font-size: 10px; white-space: nowrap; }
+  .feed-item .fs { font-size: 11px; color: var(--muted); margin-top: 4px; line-height: 1.45;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .feed-empty { padding: 24px 16px; text-align: center; color: var(--muted); font-size: 12px; line-height: 1.5; }
+
+  .polisen-pin { display: grid; place-items: center; }
+  .polisen-pin i {
+    width: 13px; height: 13px; border-radius: 50%;
+    border: 2px solid #ff9d4d; background: rgba(255, 157, 77, .3);
+    box-shadow: 0 0 0 0 rgba(255, 157, 77, .5); animation: opulse 2s infinite;
+  }
+  @keyframes opulse {
+    0% { box-shadow: 0 0 0 0 rgba(255, 157, 77, .5); }
+    70% { box-shadow: 0 0 0 9px rgba(255, 157, 77, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(255, 157, 77, 0); }
+  }
+
+  @media (max-width: 820px) {
+    .kpi-rail { display: none; }
+    .feed { display: none; }
+    .filters { width: 210px; }
+    .grid { grid-template-columns: 1fr; }
+    nav .tab { padding: 8px 10px; }
+    .brand small { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <div class="mark"></div>
+    <div>
+      <h1>Lägesbild</h1>
+      <small>Örebro · kunskapsbaserad trygghet</small>
+    </div>
+  </div>
+  <nav>
+    <button class="tab active" data-view="map">Lägesbild</button>
+    <button class="tab" data-view="analysis">Analys</button>
+    <button class="tab" data-view="insats">Insatser</button>
+  </nav>
+  <div class="live-badge" id="liveBadge"><span class="live-dot"></span><span class="lt">Live · Polisen</span></div>
+  <div class="spacer"></div>
+  <button class="btn-report" id="openReport"><span class="plus">+</span> Rapportera händelse</button>
+</header>
+
+<main>
+  <!-- LÄGESBILD -->
+  <section class="view active" id="view-map">
+    <div id="map"></div>
+
+    <div class="kpi-rail" id="kpiRail"></div>
+
+    <div class="filters">
+      <h2>Filter</h2>
+      <div class="field">
+        <label>Visa</label>
+        <div class="seg" id="kindSeg">
+          <button class="on" data-kind="">Allt</button>
+          <button data-kind="BROTT">Brott</button>
+          <button data-kind="OTRYGGHET">Otrygghet</button>
+        </div>
+      </div>
+      <div class="field">
+        <label>Område</label>
+        <select id="fArea"><option value="">Alla områden</option></select>
+      </div>
+      <div class="field">
+        <label>Period</label>
+        <select id="fPeriod">
+          <option value="30">Senaste 30 dagar</option>
+          <option value="90">Senaste 90 dagar</option>
+          <option value="">Hela perioden</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Källa</label>
+        <div class="seg" id="sourceSeg">
+          <button class="on" data-source="bada">Båda</button>
+          <button data-source="lokala">Lokala</button>
+          <button data-source="polisen">Polisen</button>
+        </div>
+      </div>
+      <div class="field">
+        <label>Vy</label>
+        <div class="seg" id="layerSeg">
+          <button class="on" data-layer="heat">Värmekarta</button>
+          <button data-layer="points">Punkter</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="legend">
+      <b>Intensitet</b>
+      <div class="row"><span class="dot" style="background:var(--brand)"></span> Få händelser</div>
+      <div class="row"><span class="dot" style="background:var(--warn)"></span> Förhöjt</div>
+      <div class="row"><span class="dot" style="background:var(--alarm)"></span> Hot-spot</div>
+      <div class="row"><span class="dot" style="background:rgba(255,157,77,.4);border:2px solid #ff9d4d"></span> Polisen (live)</div>
+    </div>
+
+    <aside class="feed" id="feed">
+      <div class="feed-head">
+        <div class="t"><span class="live-dot"></span> Live från Polisen</div>
+        <div class="s" id="feedSub">Väntar på data…</div>
+      </div>
+      <div class="feed-list" id="feedList"></div>
+    </aside>
+  </section>
+
+  <!-- ANALYS -->
+  <section class="view" id="view-analysis">
+    <div class="analysis-scroll">
+      <div class="grid">
+        <div class="card wide">
+          <h3>Veckopuls</h3>
+          <p class="sub">När inträffar händelser? Veckodag mot timme — mörka fält är hot-times.</p>
+          <div id="pulse"></div>
+        </div>
+        <div class="card">
+          <h3>Utveckling över tid</h3>
+          <p class="sub">Antal rapporterade händelser per vecka, senaste 12 veckorna.</p>
+          <div class="chart-wrap"><canvas id="trendChart"></canvas></div>
+        </div>
+        <div class="card">
+          <h3>Mest drabbade områden</h3>
+          <p class="sub">Hot-spots fördelade på brott och otrygghet.</p>
+          <div class="chart-wrap"><canvas id="areaChart"></canvas></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- INSATSER -->
+  <section class="view" id="view-insats">
+    <div class="insats-scroll">
+      <div class="insats-wrap">
+        <div class="insats-head">
+          <div>
+            <h2>Insatser</h2>
+            <p>Dokumenterade åtgärder kopplade till områden — följ upp mot lägesbilden.</p>
+          </div>
+        </div>
+        <div class="insats-list" id="insatsList"></div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<!-- REPORT SHEET -->
+<div class="overlay" id="reportOverlay">
+  <div class="sheet">
+    <header style="display:flex;align-items:center;justify-content:space-between;padding:16px 20px;">
+      <div>
+        <h2>Rapportera händelse</h2>
+        <p class="hint">Tar under 90 sekunder.</p>
+      </div>
+      <button class="close" id="closeReport" aria-label="Stäng">&times;</button>
+    </header>
+    <div class="body">
+      <p class="formerror" id="formError"></p>
+      <div class="field">
+        <label>Plats — klicka på kartan för att justera</label>
+        <div id="pickMap"></div>
+      </div>
+      <p class="coords" id="coordsLabel">—</p>
+      <div class="field">
+        <label>Område</label>
+        <select id="rArea"></select>
+      </div>
+      <div class="field">
+        <label>Händelsetyp</label>
+        <select id="rType"></select>
+      </div>
+      <div class="row2">
+        <div class="field">
+          <label>Allvarlighetsgrad</label>
+          <select id="rSeverity">
+            <option value="1">1 — Låg</option>
+            <option value="2">2 — Måttlig</option>
+            <option value="3">3 — Hög</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Rapporterad av</label>
+          <select id="rActor"></select>
+        </div>
+      </div>
+      <div class="field">
+        <label>Tidpunkt</label>
+        <input type="datetime-local" id="rTime" />
+      </div>
+      <div class="field">
+        <label>Beskrivning (valfritt)</label>
+        <textarea id="rDesc" placeholder="Kort beskrivning av händelsen eller platsen…"></textarea>
+      </div>
+    </div>
+    <div class="actions">
+      <button class="btn ghost" id="cancelReport">Avbryt</button>
+      <button class="btn primary" id="submitReport">Spara rapport</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+"use strict";
+
+const OREBRO = [59.2741, 15.2066];
+const HEAT_GRADIENT = { 0.0: "#2FD3A7", 0.45: "#F5A524", 0.8: "#FF6B5B", 1.0: "#FF3B2E" };
+const DAYS = ["Mån", "Tis", "Ons", "Tor", "Fre", "Lör", "Sön"];
+
+const state = {
+  meta: null,
+  incidents: [],
+  overview: null,
+  kind: "",
+  area: "",
+  period: "30",
+  layer: "heat",
+  source: "bada",
+  polisen: [],
+  polisenSeen: new Set(),
+};
+
+let map, heatLayer, pointLayer, polisenLayer, pickMap, pickMarker, pickLatLng;
+let trendChart, areaChart;
+
+/* ---------- helpers ---------- */
+const $ = (sel) => document.querySelector(sel);
+const api = (path) => fetch(path).then((r) => {
+  if (!r.ok) throw new Error(r.status + " " + r.statusText);
+  return r.json();
+});
+
+function fromParam() {
+  if (!state.period) return null;
+  const d = new Date();
+  d.setDate(d.getDate() - Number(state.period));
+  return d.toISOString().slice(0, 19);
+}
+
+function showToast(msg) {
+  const t = $("#toast");
+  t.textContent = msg;
+  t.classList.add("show");
+  setTimeout(() => t.classList.remove("show"), 2600);
+}
+
+/* ---------- boot ---------- */
+async function boot() {
+  try {
+    state.meta = await api("/api/meta");
+  } catch (e) {
+    document.body.insertAdjacentHTML("beforeend",
+      '<div class="empty" style="position:fixed;inset:0;display:grid;place-content:center;background:var(--bg)">Kunde inte nå servern. Starta backend med <code>mvn spring-boot:run</code> och ladda om.</div>');
+    return;
+  }
+  fillMeta();
+  initMap();
+  bindUI();
+  await refresh();
+  fetchPolisen();
+  setInterval(fetchPolisen, 60000); // pollar var minut mot vår cache (servern hämtar från Polisen var 15:e min)
+}
+
+function fillMeta() {
+  const areaSel = $("#fArea");
+  state.meta.areas.forEach((a) => {
+    areaSel.insertAdjacentHTML("beforeend", `<option value="${a}">${a}</option>`);
+    $("#rArea").insertAdjacentHTML("beforeend", `<option value="${a}">${a}</option>`);
+  });
+  state.meta.types.forEach((t) => {
+    const tag = t.kind === "BROTT" ? "Brott" : "Otrygghet";
+    $("#rType").insertAdjacentHTML("beforeend", `<option value="${t.value}">${t.label} · ${tag}</option>`);
+  });
+  state.meta.actors.forEach((a) => {
+    $("#rActor").insertAdjacentHTML("beforeend", `<option value="${a.value}">${a.label}</option>`);
+  });
+}
+
+/* ---------- map ---------- */
+function initMap() {
+  map = L.map("map", { zoomControl: false, attributionControl: true }).setView(OREBRO, 13);
+  L.control.zoom({ position: "bottomleft" }).addTo(map);
+  L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
+    attribution: '&copy; OpenStreetMap &copy; CARTO',
+    maxZoom: 19,
+    className: "map-tiles",
+  }).addTo(map);
+  pointLayer = L.layerGroup();
+  polisenLayer = L.layerGroup();
+}
+
+function drawMap() {
+  if (heatLayer) { map.removeLayer(heatLayer); heatLayer = null; }
+  pointLayer.clearLayers();
+  map.removeLayer(pointLayer);
+
+  const showLocal = state.source !== "polisen";
+  if (showLocal) {
+    const pts = state.incidents.map((i) => [i.lat, i.lng, 0.3 + i.severity * 0.25]);
+    if (state.layer === "heat") {
+      heatLayer = L.heatLayer(pts, { radius: 26, blur: 20, maxZoom: 16, gradient: HEAT_GRADIENT });
+      heatLayer.addTo(map);
+    } else {
+      state.incidents.forEach((i) => {
+        const color = i.kind === "BROTT" ? "#FF6B5B" : "#2FD3A7";
+        L.circleMarker([i.lat, i.lng], {
+          radius: 4 + i.severity, color, weight: 1, fillColor: color, fillOpacity: 0.55,
+        }).bindPopup(
+          `<b>${i.typeLabel}</b><br>${i.area} · grad ${i.severity}<br>` +
+          `<span style="color:#888">${i.occurredAt.replace("T", " ").slice(0, 16)} · ${i.reportedByLabel}</span>`
+        ).addTo(pointLayer);
+      });
+      pointLayer.addTo(map);
+    }
+  }
+
+  drawPolisenLayer();
+}
+
+function drawPolisenLayer() {
+  if (!polisenLayer) return;
+  polisenLayer.clearLayers();
+  map.removeLayer(polisenLayer);
+  if (state.source === "lokala" || !state.polisen.length) return;
+
+  state.polisen.forEach((e) => {
+    const [lat, lng] = jitter(e.id, e.lat, e.lng);
+    const icon = L.divIcon({ className: "polisen-pin", html: "<i></i>", iconSize: [13, 13] });
+    L.marker([lat, lng], { icon }).bindPopup(
+      `<b>${esc(e.typeLabel)}</b> · Polisen<br>${esc(e.locationName)} · ${fmtClock(e.occurredAt)}<br>` +
+      `<span style="color:#888">${esc((e.summary || e.name || "").slice(0, 160))}</span><br>` +
+      `<span style="color:#ff9d4d;font-size:11px">Ungefärlig plats (kommunmitt)</span>` +
+      (e.url ? `<br><a href="${e.url}" target="_blank" rel="noopener">Läs hos Polisen ↗</a>` : "")
+    ).addTo(polisenLayer);
+  });
+  polisenLayer.addTo(map);
+}
+
+// Deterministisk spridning kring kommunmitten sa markorerna inte staplas
+// (Polisen ger ingen exakt plats). Stabil mellan uppdateringar.
+function jitter(id, lat, lng) {
+  return [lat + Math.sin(id * 12.9898) * 0.0045, lng + Math.cos(id * 78.233) * 0.006];
+}
+
+function esc(s) {
+  return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+}
+
+function fmtClock(iso) {
+  return iso ? iso.slice(5, 16).replace("T", " ") : "";
+}
+
+/* ---------- kpis ---------- */
+function drawKpis() {
+  const inc = state.incidents;
+  const total = inc.length;
+  const brott = inc.filter((i) => i.kind === "BROTT").length;
+  const otrygg = total - brott;
+  const s = state.overview.summary;
+  const delta = s.changePct;
+  const dCls = delta > 0 ? "up" : delta < 0 ? "down" : "";
+  const dTxt = delta > 0 ? `▲ ${delta}%` : delta < 0 ? `▼ ${Math.abs(delta)}%` : "oförändrat";
+
+  $("#kpiRail").innerHTML = `
+    <div class="kpi"><div class="label">Händelser</div><div class="value">${total}</div></div>
+    <div class="kpi"><div class="label">Brott</div><div class="value red">${brott}</div></div>
+    <div class="kpi"><div class="label">Otrygghet</div><div class="value green">${otrygg}</div></div>
+    <div class="kpi"><div class="label">30 dgr vs föreg.</div><div class="value">${s.last30}</div><div class="delta ${dCls}">${dTxt}</div></div>
+    <div class="kpi"><div class="label">Hot-spot</div><div class="value" style="font-size:16px;padding-top:4px">${s.topArea}</div></div>
+  `;
+}
+
+/* ---------- analysis ---------- */
+function drawPulse() {
+  const cells = state.overview.hotTimes;
+  let max = 1;
+  cells.forEach((c) => { if (c.count > max) max = c.count; });
+
+  const lookup = {};
+  cells.forEach((c) => { lookup[c.weekday + ":" + c.hour] = c.count; });
+
+  const colorFor = (n) => {
+    if (n === 0) return "var(--panel-2)";
+    const t = n / max;
+    if (t < 0.34) return `rgba(47,211,167,${0.25 + t * 1.4})`;
+    if (t < 0.67) return `rgba(245,165,36,${0.45 + t * 0.5})`;
+    return `rgba(255,107,91,${0.55 + t * 0.45})`;
+  };
+
+  let hours = '<div class="pulse-hours">';
+  for (let h = 0; h < 24; h++) hours += `<span>${h % 3 === 0 ? h : ""}</span>`;
+  hours += "</div>";
+
+  let rows = "";
+  for (let wd = 1; wd <= 7; wd++) {
+    let cellsHtml = '<div class="pulse-cells">';
+    for (let h = 0; h < 24; h++) {
+      const n = lookup[wd + ":" + h] || 0;
+      cellsHtml += `<div class="cell" style="background:${colorFor(n)}" title="${DAYS[wd - 1]} kl ${h}:00 — ${n} st"></div>`;
+    }
+    cellsHtml += "</div>";
+    rows += `<div class="pulse-row"><div class="pulse-day">${DAYS[wd - 1]}</div>${cellsHtml}</div>`;
+  }
+
+  $("#pulse").innerHTML = `<div class="pulse"><div></div>${hours}${rows}</div>` +
+    `<div class="pulse-scale">Färre <span class="bar">
+       <i style="background:var(--panel-2)"></i>
+       <i style="background:rgba(47,211,167,.7)"></i>
+       <i style="background:rgba(245,165,36,.8)"></i>
+       <i style="background:rgba(255,107,91,.9)"></i>
+     </span> Fler</div>`;
+}
+
+function drawTrend() {
+  const t = state.overview.trend;
+  const ctx = $("#trendChart");
+  if (trendChart) trendChart.destroy();
+  trendChart = new Chart(ctx, {
+    type: "line",
+    data: {
+      labels: t.map((p) => p.label),
+      datasets: [{
+        data: t.map((p) => p.count),
+        borderColor: "#2FD3A7",
+        backgroundColor: "rgba(47,211,167,.12)",
+        fill: true, tension: 0.35, borderWidth: 2,
+        pointRadius: 3, pointBackgroundColor: "#2FD3A7",
+      }],
+    },
+    options: baseChartOpts(),
+  });
+}
+
+function drawAreas() {
+  const a = state.overview.byArea.slice(0, 8);
+  const ctx = $("#areaChart");
+  if (areaChart) areaChart.destroy();
+  areaChart = new Chart(ctx, {
+    type: "bar",
+    data: {
+      labels: a.map((x) => x.area),
+      datasets: [
+        { label: "Brott", data: a.map((x) => x.brott), backgroundColor: "#FF6B5B", borderRadius: 4, stack: "s" },
+        { label: "Otrygghet", data: a.map((x) => x.otrygghet), backgroundColor: "#2FD3A7", borderRadius: 4, stack: "s" },
+      ],
+    },
+    options: { ...baseChartOpts(true), indexAxis: "y" },
+  });
+}
+
+function baseChartOpts(legend) {
+  return {
+    responsive: true, maintainAspectRatio: false,
+    plugins: {
+      legend: legend ? { labels: { color: "#8FA0BC", font: { size: 11 }, boxWidth: 12 } } : { display: false },
+      tooltip: { backgroundColor: "#16223A", borderColor: "#233247", borderWidth: 1, titleColor: "#EAF1FB", bodyColor: "#c3d0e4" },
+    },
+    scales: {
+      x: { stacked: !!legend, ticks: { color: "#8FA0BC", font: { size: 10 } }, grid: { color: "rgba(35,50,71,.5)" } },
+      y: { stacked: !!legend, ticks: { color: "#8FA0BC", font: { size: 10 } }, grid: { color: "rgba(35,50,71,.5)" }, beginAtZero: true },
+    },
+  };
+}
+
+/* ---------- interventions ---------- */
+async function drawInsatser() {
+  const list = await api("/api/interventions");
+  const el = $("#insatsList");
+  if (!list.length) {
+    el.innerHTML = '<div class="empty">Inga insatser ännu. Insatser kopplas till områden och följs upp mot lägesbilden.</div>';
+    return;
+  }
+  el.innerHTML = list.map((x) => `
+    <div class="insats ${x.status}">
+      <div class="top">
+        <span class="title">${x.title}</span>
+        <span class="pill ${x.status}">${x.statusLabel}</span>
+      </div>
+      <div class="meta"><span class="area-tag">${x.area}</span> · start ${x.startedAt} · ${x.ownerLabel}</div>
+      ${x.description ? `<div class="desc">${x.description}</div>` : ""}
+    </div>
+  `).join("");
+}
+
+/* ---------- live polisen feed ---------- */
+async function fetchPolisen() {
+  try {
+    const [events, status] = await Promise.all([
+      api("/api/polisen/events"),
+      api("/api/polisen/status"),
+    ]);
+    state.polisen = events;
+    updateLiveBadge(status);
+    renderFeed();
+    drawPolisenLayer();
+  } catch (e) {
+    const b = $("#liveBadge");
+    b.classList.add("on", "offline");
+    b.querySelector(".lt").textContent = "Polisen offline";
+    $("#feedSub").textContent = "Kunde inte nå Polisens API";
+  }
+}
+
+function updateLiveBadge(status) {
+  const b = $("#liveBadge");
+  b.classList.add("on");
+  b.classList.toggle("offline", !status.live);
+  b.querySelector(".lt").textContent = status.live ? "Live · Polisen" : "Polisen offline";
+
+  const sub = $("#feedSub");
+  if (status.lastUpdated) {
+    const t = new Date(status.lastUpdated)
+      .toLocaleTimeString("sv-SE", { hour: "2-digit", minute: "2-digit" });
+    sub.textContent = `${status.count} händelser · uppdaterad ${t}`;
+  } else {
+    sub.textContent = status.live ? `${status.count} händelser` : "Väntar på data…";
+  }
+}
+
+function renderFeed() {
+  const list = $("#feedList");
+  if (!state.polisen.length) {
+    list.innerHTML = '<div class="feed-empty">Inga händelser hämtade ännu.<br>Flödet uppdateras automatiskt.</div>';
+    return;
+  }
+  list.innerHTML = state.polisen.slice(0, 40).map((e) => {
+    const isNew = !state.polisenSeen.has(e.id);
+    return `<div class="feed-item ${isNew ? "new" : ""}" data-id="${e.id}">
+      <div class="ft"><span>${esc(e.typeLabel)}</span><span class="time">${fmtClock(e.occurredAt)}</span></div>
+      <div class="fs">${esc(e.summary || e.name || "")}</div>
+    </div>`;
+  }).join("");
+
+  state.polisen.forEach((e) => state.polisenSeen.add(e.id));
+
+  list.querySelectorAll(".feed-item").forEach((it) => {
+    it.addEventListener("click", () => {
+      const e = state.polisen.find((x) => x.id === Number(it.dataset.id));
+      if (!e) return;
+      if (state.source === "lokala") setSource("bada");
+      const [lat, lng] = jitter(e.id, e.lat, e.lng);
+      map.flyTo([lat, lng], 15, { duration: 0.8 });
+    });
+  });
+}
+
+function setSource(v) {
+  state.source = v;
+  $("#sourceSeg").querySelectorAll("button").forEach((b) => b.classList.toggle("on", b.dataset.source === v));
+  drawMap();
+}
+
+/* ---------- data refresh ---------- */
+async function refresh() {
+  const params = new URLSearchParams();
+  if (state.kind) params.set("kind", state.kind);
+  if (state.area) params.set("area", state.area);
+  const from = fromParam();
+  if (from) params.set("from", from);
+
+  const [incidents, overview] = await Promise.all([
+    api("/api/incidents?" + params.toString()),
+    api("/api/analysis/overview"),
+  ]);
+  state.incidents = incidents;
+  state.overview = overview;
+
+  drawMap();
+  drawKpis();
+  drawPulse();
+  drawTrend();
+  drawAreas();
+}
+
+/* ---------- UI binding ---------- */
+function bindUI() {
+  document.querySelectorAll(".tab").forEach((tab) => {
+    tab.addEventListener("click", () => {
+      document.querySelectorAll(".tab").forEach((t) => t.classList.remove("active"));
+      tab.classList.add("active");
+      const v = tab.dataset.view;
+      document.querySelectorAll(".view").forEach((s) => s.classList.remove("active"));
+      $("#view-" + v).classList.add("active");
+      if (v === "map" && map) setTimeout(() => map.invalidateSize(), 50);
+      if (v === "insats") drawInsatser();
+    });
+  });
+
+  $("#kindSeg").addEventListener("click", (e) => {
+    if (!e.target.dataset.kind && e.target.dataset.kind !== "") return;
+    if (e.target.tagName !== "BUTTON") return;
+    $("#kindSeg").querySelectorAll("button").forEach((b) => b.classList.remove("on"));
+    e.target.classList.add("on");
+    state.kind = e.target.dataset.kind;
+    refresh();
+  });
+
+  $("#layerSeg").addEventListener("click", (e) => {
+    if (e.target.tagName !== "BUTTON") return;
+    $("#layerSeg").querySelectorAll("button").forEach((b) => b.classList.remove("on"));
+    e.target.classList.add("on");
+    state.layer = e.target.dataset.layer;
+    drawMap();
+  });
+
+  $("#sourceSeg").addEventListener("click", (e) => {
+    if (e.target.tagName !== "BUTTON") return;
+    setSource(e.target.dataset.source);
+  });
+
+  $("#fArea").addEventListener("change", (e) => { state.area = e.target.value; refresh(); });
+  $("#fPeriod").addEventListener("change", (e) => { state.period = e.target.value; refresh(); });
+
+  $("#openReport").addEventListener("click", openReport);
+  $("#closeReport").addEventListener("click", closeReport);
+  $("#cancelReport").addEventListener("click", closeReport);
+  $("#submitReport").addEventListener("click", submitReport);
+  $("#rArea").addEventListener("change", centerPickToArea);
+}
+
+/* ---------- report flow ---------- */
+function openReport() {
+  $("#reportOverlay").classList.add("open");
+  $("#formError").textContent = "";
+  const now = new Date();
+  now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+  $("#rTime").value = now.toISOString().slice(0, 16);
+
+  if (!pickMap) {
+    pickMap = L.map("pickMap", { zoomControl: false, attributionControl: false }).setView(OREBRO, 13);
+    L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", { maxZoom: 19 }).addTo(pickMap);
+    pickMap.on("click", (e) => setPick(e.latlng.lat, e.latlng.lng));
+  }
+  setTimeout(() => { pickMap.invalidateSize(); centerPickToArea(); }, 60);
+}
+
+function closeReport() { $("#reportOverlay").classList.remove("open"); }
+
+function centerPickToArea() {
+  // Sätt markör nära områdets centrum genom att utgå från senaste incident i området om möjligt
+  const name = $("#rArea").value;
+  const match = state.incidents.find((i) => i.area === name);
+  const ll = match ? [match.lat, match.lng] : OREBRO;
+  pickMap.setView(ll, 14);
+  setPick(ll[0], ll[1]);
+}
+
+function setPick(lat, lng) {
+  pickLatLng = { lat, lng };
+  if (pickMarker) pickMarker.setLatLng([lat, lng]);
+  else pickMarker = L.circleMarker([lat, lng], { radius: 7, color: "#2FD3A7", fillColor: "#2FD3A7", fillOpacity: .8, weight: 2 }).addTo(pickMap);
+  $("#coordsLabel").textContent = `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+}
+
+async function submitReport() {
+  const err = $("#formError");
+  err.textContent = "";
+  if (!pickLatLng) { err.textContent = "Välj en plats på kartan."; return; }
+
+  const payload = {
+    type: $("#rType").value,
+    area: $("#rArea").value,
+    lat: pickLatLng.lat,
+    lng: pickLatLng.lng,
+    severity: Number($("#rSeverity").value),
+    occurredAt: $("#rTime").value,
+    description: $("#rDesc").value.trim() || null,
+    reportedBy: $("#rActor").value,
+  };
+
+  try {
+    const r = await fetch("/api/incidents", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!r.ok) {
+      const data = await r.json().catch(() => ({}));
+      err.textContent = data.message || "Kunde inte spara. Kontrollera fälten och försök igen.";
+      return;
+    }
+    closeReport();
+    $("#rDesc").value = "";
+    showToast("Händelse rapporterad");
+    await refresh();
+  } catch (e) {
+    err.textContent = "Servern svarade inte. Försök igen.";
+  }
+}
+
+boot();
+</script>
+</body>
+</html>
